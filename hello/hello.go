@@ -24,8 +24,6 @@ const (
 	SSERoute       = "/sse"
 	HealthRoute    = "/_health"
 	defaultSSEFreq = time.Second * 10
-	minSSEFreq     = time.Second * 1
-	maxRequestBody = 1 << 20 // 1 MB
 )
 
 type templateData struct {
@@ -119,13 +117,7 @@ func StartHelloWorldServer(log *zerolog.Logger, listener net.Listener, shutdownC
 	muxer.HandleFunc(SSERoute, sseHandler(log))
 	muxer.HandleFunc(HealthRoute, healthHandler())
 	muxer.HandleFunc("/", rootHandler(serverName))
-	httpServer := &http.Server{
-		Addr:              listener.Addr().String(),
-		Handler:           muxer,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	httpServer := &http.Server{Addr: listener.Addr().String(), Handler: muxer}
 	go func() {
 		<-shutdownC
 		_ = httpServer.Close()
@@ -209,9 +201,6 @@ func sseHandler(log *zerolog.Logger) http.HandlerFunc {
 		if requestedFreq := r.URL.Query()["freq"]; len(requestedFreq) > 0 {
 			parsedFreq, err := time.ParseDuration(requestedFreq[0])
 			if err == nil {
-				if parsedFreq < minSSEFreq {
-					parsedFreq = minSSEFreq
-				}
 				freq = parsedFreq
 			}
 		}
@@ -245,7 +234,7 @@ func rootHandler(serverName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var buffer bytes.Buffer
 		var body string
-		rawBody, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+		rawBody, err := io.ReadAll(r.Body)
 		if err == nil {
 			body = string(rawBody)
 		} else {
